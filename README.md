@@ -16,11 +16,20 @@ and [§6](PLAN.md#6-transducer-track-b-planar-magnetic-drive-flex-pcb-coil-on-th
 
 ## Design thesis
 
-A previous attempt (speaker inside the body under the head) produced a
-single-pitch squeal. That failure mode is structural: pure acoustic
-feedback through one transducer converges to whichever mode has highest
-loop gain and locks there. Avoiding it requires two things, and the
-whole project is built around them:
+Two prior attempts shape this design:
+
+- **Speaker inside the body under the head** produced a single-pitch
+  squeal. Structural failure: pure acoustic feedback through one
+  transducer converges to whichever mode has highest loop gain and
+  locks there.
+- **Piezo discs bonded to the head** drove the head successfully but
+  with a peaky, bass-weak frequency response (intrinsic 3–8 kHz piezo
+  resonance, vanishing displacement at low frequency, capacitive-load
+  mismatch). Validated direct head-drive as a concept; ruled out
+  piezos as the actuator class.
+
+Avoiding a locked-pitch Larsen drone requires two things, and the
+whole DSP design is built around them:
 
 1. **Phase incoherence in the loop** — a small (3–20 Hz) single-sideband
    frequency shift in the feedback path prevents any mode from
@@ -51,11 +60,29 @@ drum head, with an alternating-polarity magnet array mounted inside the
 shell directly below. The head becomes the diaphragm of a planar
 magnetic driver — the same principle as a HiFiMan/Audeze headphone,
 applied to a darbuka. Low added mass (~1–2 g) means minimal damping of
-the acoustic character. **Segmenting the coil into 4–8 wedges driven
-independently lets the DSP excite specific membrane modes (m=0, m=1,
-m=2, m=3)** — a capability no tactile transducer can offer. See
-[PLAN.md §6](PLAN.md#6-transducer-track-b-planar-magnetic-drive-flex-pcb-coil-on-the-head),
-especially [§6.3 on coil segmentation → modal selectivity](PLAN.md#63-coil-segmentation--modal-selectivity).
+the acoustic character. Because force is F = BIL (proportional to
+current), response is flat across the audio band — the piezo FR
+problem doesn't apply.
+
+The coil is **segmented** along three orthogonal axes (see
+[§6.3](PLAN.md#63-coil-segmentation--modal-selectivity)):
+
+- **Azimuthal** — N wedges around the ring, reaches azimuthal modes
+  m=0..m=(N/2).
+- **Radial** — two concentric coil rings at different radii lets in-/
+  anti-phase driving pick between radial modes (n=1 fundamental vs.
+  n=2 overtone).
+- **Drive pattern** — the phase/amplitude per segment in real time
+  selects rotating, dipole, quadrupole, or hit-location-following
+  excitation.
+
+First-prototype target: **2 concentric rings × 4 azimuthal wedges =
+8 coils**, driven by two 4-channel class-D boards, reaching m=0..m=2
+× n=1..n=2. Power budget (see
+[§6.4](PLAN.md#64-power-efficiency-and-thermal-budget)) comes out to
+~0.5 W per coil, ~4 W across the array — about 2 orders of magnitude
+below the PCB's thermal ceiling, so the coil comfortably sustains
+feedback; it's just not a speaker.
 
 ## Why a darbuka
 
@@ -110,29 +137,39 @@ side-by-side comparison PNG.
 
 ## Hardware (prototype phase)
 
+**Track A — tactile measurement baseline:**
 - Dayton DAEX25FHE-4 tactile transducer (body driver)
 - Dayton DAEX13CT-4 tactile transducer (hoop driver)
 - TPA3116 class-D amp board
 - USB measurement mic (Dayton UMM-6 or similar)
-- N52 neodymium discs (10 × 3 mm) for the magnetic mount
+- N52 neodymium discs (10 × 3 mm) for the body-magnet mount
 - M3 bolts + nuts for clamp pinch
 - PETG filament for the printed parts
 
-Later (DSP build):
+**Track B — planar magnetic drive:**
+- 4-layer flex PCB, 2 oz copper, ~200 mm OD annular (JLCPCB/PCBWay,
+  ~$10/board at MOQ 5)
+- N42 bar magnets (3 × 3 × 20 mm), 16+ per drum, alternating polarity
+- Two 4-channel class-D amp boards (8 channels total)
+- 8-channel I2S DAC to drive the amps from the Daisy
+- 3M 467MP adhesive or urethane laquer for bonding the coil to the head
 
+**DSP build (after transducer coupling is validated):**
 - Daisy Seed (STM32H7 + audio codec)
-- External multichannel ADC — AK5558 TDM or a pair of PCM1865s — since
-  the Daisy's onboard codec is stereo only and the mic array needs four
-  channels
+- External multichannel I2S ADC — AK5558 TDM or a pair of PCM1865s —
+  since the Daisy's onboard codec is stereo only and the mic array
+  needs four channels
 - 3–4 WM-61A-class electrets + simple preamps
 - Small UI panel (pots, encoder, OLED)
 
 ## Decision gate
 
-The measurement results will answer: *does any mount produce
-broadband coupling strong enough to sustain acoustic feedback at modest
-drive levels?* If yes, the DSP work begins. If no, mount geometry gets
-another iteration before writing any firmware.
+Track A's measurement results will answer: *does any off-the-shelf
+mount produce broadband coupling strong enough to sustain acoustic
+feedback at modest drive levels?* That result also serves as the
+reference the Track B flex PCB is judged against when it arrives.
+If either track clears the bar, DSP work begins. If neither does,
+mount/coil geometry iterates before any firmware is written.
 
 ## License
 
