@@ -9,7 +9,10 @@ playable rather than a locked-pitch Larsen drone.
 **Status:** early design and prototyping. No DSP code yet — the current
 work is de-risking the single biggest unknown: whether a transducer can
 be coupled to the drum head strongly enough to sustain feedback, without
-damping the head.
+damping the head. Two transducer tracks run in parallel:
+a **tactile/off-the-shelf baseline** and a **planar magnetic flex-PCB
+coil** bonded to the head (see [PLAN.md §5](PLAN.md#5-transducer-track-a-tactile--off-the-shelf-baseline)
+and [§6](PLAN.md#6-transducer-track-b-planar-magnetic-drive-flex-pcb-coil-on-the-head)).
 
 ## Design thesis
 
@@ -33,6 +36,26 @@ inside the body, doing triple duty: audio pickup, onset/velocity
 detection, and hit localization via time-difference-of-arrival. Control
 is **MIDI over USB**. See [PLAN.md](PLAN.md) for the full architecture,
 decision log, and open questions.
+
+## Two transducer tracks
+
+**Track A — tactile (baseline).** Off-the-shelf tactile transducers
+clamped to the darbuka's metal hoop or magnet-mounted to the body. Cheap,
+available now, and the reference against which Track B is compared. This
+is what `measure.py` and `brackets.scad` currently support. See
+[PLAN.md §5](PLAN.md#5-transducer-track-a-tactile--off-the-shelf-baseline).
+
+**Track B — planar magnetic flex-PCB coil on the head.** A thin
+multi-layer flex PCB spiral coil is laquered to the outer annulus of the
+drum head, with an alternating-polarity magnet array mounted inside the
+shell directly below. The head becomes the diaphragm of a planar
+magnetic driver — the same principle as a HiFiMan/Audeze headphone,
+applied to a darbuka. Low added mass (~1–2 g) means minimal damping of
+the acoustic character. **Segmenting the coil into 4–8 wedges driven
+independently lets the DSP excite specific membrane modes (m=0, m=1,
+m=2, m=3)** — a capability no tactile transducer can offer. See
+[PLAN.md §6](PLAN.md#6-transducer-track-b-planar-magnetic-drive-flex-pcb-coil-on-the-head),
+especially [§6.3 on coil segmentation → modal selectivity](PLAN.md#63-coil-segmentation--modal-selectivity).
 
 ## Why a darbuka
 
