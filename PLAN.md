@@ -132,18 +132,49 @@ the boundary itself* (shake the hoop), every mode with radial slope at the
 edge — all of them — gets excited in proportion to hoop velocity. Rimshots
 work for this reason on a snare.
 
-### 5.2 Mount options to test
+### 5.2 Mount options
+
+**Currently testing (tactile, off-the-shelf):**
 - **A. Hoop clamp** — C-shaped clamp that straddles the darbuka's tuning
   hoop between two bolts. Non-destructive. Likely best coupling.
 - **B. Tuning-bolt-replacement bracket** — L-bracket captured under an
   existing tuning bolt. Uses stock hardware; no drilling, no clamp force
   loss.
-- **C. Body-interior (magnetic for metal bodies)** — magnet-mounted tactile
-  transducer on the inside wall of the goblet. Baseline for comparison;
-  excites body modes, couples to head only via air + edge.
-- **D. Direct head driver (voice coil on skin)** — formerly rejected for
-  violating the no-damping goal, now revived in a low-mass form as the
-  planar magnetic track (§6).
+- **C. Body-interior (magnetic for metal bodies)** — magnet-mounted
+  tactile transducer on the inside wall of the goblet. Baseline for
+  comparison; excites body modes, couples to head only via air + edge.
+
+**Previously tried by the user, rejected (prior art):**
+- **Speaker mounted inside the body under the head.** Produced a
+  single-pitch Larsen lock, unpleasant and static. Fails for a
+  structural reason: one transducer + flat-gain feedback converges to
+  whichever mode has highest loop gain and stays there. This failure
+  motivated the whole §1 design thesis (phase incoherence + multiple
+  parallel paths). Do not revisit without the DSP countermeasures in
+  §3.2.
+- **Piezo discs bonded directly to the head.** *Did* drive the head,
+  which validated direct head-drive as a concept — but frequency
+  response was poor. Three compounding reasons:
+  - Piezos have an intrinsic mechanical resonance in the ~3–8 kHz
+    range that peaks hard and colors everything it drives.
+  - Piezo motion is strain-based (µm-scale), roughly frequency-flat in
+    *voltage drive*, which means vanishing *displacement* at low
+    frequencies — so bass response is weak.
+  - Piezos are capacitive (nF load), mismatched to standard
+    voltage-source amps at low frequency; most of the voltage swing
+    never becomes strain.
+  - Also concentrates mass-loading at a single bond point, damping
+    the local area.
+
+  Takeaway: direct head drive works, but a piezo is the wrong actuator
+  class for a flat-response audio-band driver.
+
+**Formerly rejected, now revived:**
+- **D. Direct head driver.** Originally rejected for mass-loading /
+  damping the head. Revived in a low-mass flex-PCB form as the planar
+  magnetic track (§6), which also sidesteps the piezo frequency-response
+  problem by using Lorentz force (F = BIL) that's flat with frequency
+  and voltage-matched to conventional amps.
 
 ### 5.3 Measurement protocol
 Before committing to any permanent build:
@@ -488,6 +519,11 @@ secondary body-resonance drivers in the stereo (or multichannel) output.
 - Transducer strategy: **dual-track** — Track A tactile (baseline /
   measurement), Track B planar magnetic flex PCB (target final
   instrument). §5, §6.
+- **Piezos as head-drive actuators: rejected.** Prior attempt by the
+  user validated that direct head drive works, but the frequency
+  response was bad (intrinsic 3–8 kHz piezo resonance, vanishing
+  displacement at bass, capacitive load mismatch). Planar magnetic
+  drive replaces piezos for the direct-drive role. §5.2.
 
 ## 9. Next steps
 
