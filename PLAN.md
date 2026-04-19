@@ -22,54 +22,121 @@ incoherence** (so no single mode dominates) and **multiple parallel paths**
 (so the system can't settle into a fixed point). Every DSP choice below
 serves this thesis.
 
-## 2. Compute platform
+## 2. Compute platforms — prototype on PC, deploy to Daisy
 
-**Chosen: Daisy Seed** (STM32H7 @ 480 MHz, 64 MB SDRAM, onboard audio codec).
+Two targets, **same FAUST DSP graph**. FAUST compiles `djembe.dsp` to
+either a PC JACK client (`faust2jack`) or bare-metal Daisy firmware
+(`faust2daisy`) from identical source — the graph is portable, so
+nothing we commit to in the prototype phase locks us out of the
+deployment phase.
 
-Considered:
-- ESP32 — too weak for multi-channel DSP with low latency.
-- Raspberry Pi Zero 2W — viable with PREEMPT_RT but more OS overhead.
-- OWL pedal — similar capability, more expensive and larger.
-- **Daisy Seed** — small, cheap (~$30), first-class audio DSP, FAUST/C++ toolchain, strong community.
+### 2.1 Prototyping platform — PC + multichannel USB audio interface
 
-Known limitation: the onboard codec is stereo in/out only. A 3–4 element mic
-array needs an **external multichannel I2S/TDM ADC** (AK5558 eval or PCM1865
-pair). The planar magnetic drive (§6) also needs multichannel output for
-segmented coil drive.
+**Primary development platform.** A Linux PC with an 8 in / 8 out USB
+audio interface (one is on hand) is the first target, not second.
+Rationale:
 
-Control: **MIDI over USB** (Daisy has USB host/device). Add OSC over WiFi
-later only if needed — simpler is better to start.
+- **Channel count matches Track B first prototype exactly:** 4 channels
+  for the mic array (§3.1) + 8 channels for the 2×4 segmented coil
+  drive (§6.3.4) fit in a single 8-in / 8-out interface with room to
+  spare on the input side.
+- **Iteration speed:** edit `djembe.dsp` → `faust2jack` → restart
+  client → test. Loop closes in seconds. No flashing, no bootloader,
+  no serial console.
+- **Tooling:** Python measurement (`measure.py`), spectral analysis,
+  record-everything-simultaneously, and FAUST's web/IDE previews all
+  run natively on the dev machine.
+- **Same analog chain as the final instrument.** The external class-D
+  amps planned for deployment (TPA3116 / TAS5825) drop in between the
+  interface outputs and the transducers today, validating the amp
+  stage end-to-end before Daisy ever enters the picture.
+- **De-risks the hard parts first.** Whether the DSP sounds right,
+  whether planar coils drive the head, whether feedback is
+  controllable — all answerable on PC. Daisy then becomes a packaging
+  step, not a discovery step.
+
+**Latency.** JACK or PipeWire-JACK at 48 kHz / 64-sample buffer
+delivers ~3–6 ms total round-trip on a decent USB interface, vs.
+~1 ms on bare-metal Daisy. For the closed feedback loop this shifts
+which modes lock preferentially (phase accumulates faster at high
+frequencies) but does not kill the effect — the §3.2 path-2
+freq-shifter breaks the phase coherence either way. An incidental
+benefit: prototyping at higher latency teaches us how sensitive the
+design actually is to latency, which is useful knowledge for free.
+
+**Stability.** RT-priority for the JACK/PW audio thread (`chrt
+--fifo 80` or equivalent, or a pre-configured audio Linux) keeps
+xruns out under load.
+
+### 2.2 Deployment target — Daisy Seed
+
+**Chosen for the finished instrument:** STM32H7 @ 480 MHz, 64 MB SDRAM,
+onboard audio codec, ~$30, first-class FAUST backend.
+
+Considered and rejected:
+- ESP32 — too weak for multi-channel DSP at low latency.
+- Raspberry Pi Zero 2W — viable with PREEMPT_RT but more OS overhead
+  and unfortunate form-factor / boot-time tradeoffs for a standalone
+  instrument.
+- OWL pedal — similar capability, more expensive, larger.
+
+Known limitations that only bite at deployment:
+- Onboard codec is stereo in/out only. A 3–4 element mic array needs
+  an **external multichannel I2S/TDM ADC** (AK5558 eval or PCM1865
+  pair). The planar magnetic drive (§6) likewise needs multichannel
+  output for segmented coil drive — another external I2S DAC.
+- These are avoidable during prototyping because the PC interface
+  covers all required channels natively.
+
+Control: **MIDI over USB** (Daisy has USB host/device). OSC over WiFi
+deferred unless needed.
+
+### 2.3 Porting path
+
+The Daisy port is the *last* step, not the first:
+
+1. PC prototype validates the full DSP graph against real mic array,
+   real transducers, real coils, real amps.
+2. Once the instrument sounds right on PC, port `djembe.dsp` to Daisy
+   via `faust2daisy`. DSP logic is unchanged; target-specific code is
+   only the audio I/O glue.
+3. Wire Daisy-side multichannel ADC + DAC for the same channel count
+   the PC interface provided.
+4. Build enclosure, panel pots, OLED / encoder UI.
+
+If the PC prototype reveals Daisy's compute or I/O is insufficient
+(unlikely at the current scope), reconsider platform before building
+the enclosure — not before.
 
 ## 3. High-level architecture
 
-```
-  [3–4 electret mics in body]
-            │
-            ▼
-   ┌──────────────────┐
-   │ External I2S TDM │   (Daisy's onboard codec is stereo only)
-   │ ADC (AK5558)     │
-   └────────┬─────────┘
-            │ 4ch audio
-            ▼
-   ┌────────────────────────────────────────────────┐
-   │               Daisy Seed (DSP core)            │
-   │  ┌──────────────┐   ┌──────────────────────┐  │
-   │  │ Hit analysis │   │ Audio processing     │  │
-   │  │ (onset, TDOA │──▶│ graph (§3.2)         │  │
-   │  │  location,   │   │                      │  │
-   │  │  velocity)   │   │                      │  │
-   │  └──────┬───────┘   └──────────┬───────────┘  │
-   │         └──── modulates ───────┘              │
-   └────────────────────┬───────────────────────────┘
-                        │ multichannel out (to class-D amp)
-            ┌───────────┴────────────┐
-            ▼                        ▼
-   [Shell/body transducer]  [Head driver — track A or B]
-   (excites body resonance) (primary feedback path; see §5 / §6)
+```mermaid
+flowchart TD
+    mics["3–4 electret mics in body"]
+    adc["Multichannel ADC (in)<br/>PC: audio interface<br/>Daisy: AK5558 / PCM1865"]
+    mics --> adc
 
-   MIDI-USB in  ────▶  Daisy (CC → param matrix)
-   Pots on panel ────▶  global macros (chaos, shift, mix)
+    subgraph core["DSP core — same FAUST graph, two targets"]
+        hit["Hit analysis<br/>onset · TDOA · velocity"]
+        audio["Audio processing graph<br/>(§3.2 parallel paths)"]
+        hit -->|modulates| audio
+    end
+
+    adc -->|4-ch audio| core
+
+    dac["Multichannel DAC (out)<br/>PC: audio interface<br/>Daisy: PCM5242 / TAS5825"]
+    core -->|multi-ch| dac
+
+    amp["Class-D amps<br/>TPA3116 / TAS5825"]
+    dac --> amp
+
+    shell["Shell / body transducer<br/>(body resonance)"]
+    head["Head driver — Track A or B<br/>(primary feedback path, §5 / §6)"]
+    amp --> shell
+    amp --> head
+
+    midi["MIDI-USB in"] -->|CC → param matrix| core
+    pots["Panel pots / ADCs"] -->|macros: chaos, shift, mix| core
 ```
 
 ### 3.1 Sensing — one mic array, three jobs
@@ -112,6 +179,189 @@ excite a specific mode.
 - Pots on Daisy's ADCs: 4–6 most-used macros for standalone play.
 - Hit (x, y, velocity) is itself a modulation source — treat as a 3D
   controller.
+
+### 3.4 Physical model as a first-class component
+
+Before any hardware exists and long after it does, we need to drive
+virtual strikes at arbitrary (x, y) positions through the DSP graph. A
+**circular-membrane modal model** fills that role as a named component in
+`djembe.dsp` and plugs into the existing architecture without rewriting
+anything downstream.
+
+#### 3.4.1 Physical basis — the ideal clamped circular membrane
+
+The model is the textbook 2D wave equation on a disk with a fixed
+(clamped) rim. What's in `djembe.dsp` is **modal synthesis with
+ideal-membrane coefficients**: we borrow the classical eigenfrequencies
+and eigenshapes from the PDE, but the actual ringing is a bank of
+resonant biquads, not a PDE solver.
+
+**The PDE:**
+
+    ∂²u/∂t² = c² ∇²u,     u(R, φ, t) = 0,     c = √(T/σ)
+
+where u(r, φ, t) is transverse displacement, T is head tension (N/m),
+σ is areal mass density (kg/m²), R is the head radius. The boundary
+condition u(R, φ, t) = 0 is the darbuka's metal hoop pinning the skin
+to zero displacement at the rim.
+
+**Separation of variables on the disk** (u = F(r)·G(φ)·e^{iωt}) gives
+
+    ψ_{m,n}(r, φ) = J_m(j_{m,n} · r / R) · cos(m·φ)
+    ω_{m,n}       = (c / R) · j_{m,n}
+
+where J_m is the m-th Bessel function of the first kind and j_{m,n} is
+its n-th positive zero. The clamped-rim condition is exactly what
+forces J_m to vanish at r = R, which is why the mode's radial argument
+is scaled by j_{m,n}. The index m counts **nodal diameters**; n counts
+**nodal circles** (the rim counts as one). Each m ≥ 1 mode also has a
+sin(m·φ) partner at the same frequency — a degenerate pair that real
+drums split slightly when tension is uneven; we collapse to the cos
+branch for the sketch.
+
+**Strike excitation.** A localized impulse at (r₀, φ₀) with velocity v
+projects onto each mode via the spatial-overlap integral of the forcing
+against the mode shape, which for a point strike collapses to the mode
+shape evaluated at the strike point:
+
+    a_{m,n} ∝ ψ_{m,n}(r₀, φ₀) · v
+           = J_m(j_{m,n} · r₀ / R) · cos(m·φ₀) · v
+
+That's the `w_{m,n}` weight used in `djembe.dsp`. Intuitively: a mode
+rings louder the more the strike lands on one of its anti-nodes, and
+falls silent if the strike lands on one of its nodes (the sign flips
+of J_m or the zeros of cos m·φ).
+
+#### 3.4.2 Mode table and FAUST weights
+
+The first nine (m, n) modes match the frequency ratios already in
+`djembe.dsp`:
+
+| (m, n) | ratio f/f_{0,1} = j_{m,n}/j_{0,1} | j_{m,n} |
+|--------|-----------------------------------|---------|
+| (0, 1) | 1.000 | 2.4048 |
+| (1, 1) | 1.593 | 3.8317 |
+| (2, 1) | 2.135 | 5.1356 |
+| (0, 2) | 2.295 | 5.5201 |
+| (3, 1) | 2.653 | 6.3802 |
+| (1, 2) | 2.917 | 7.0156 |
+| (4, 1) | 3.156 | 7.5883 |
+| (2, 2) | 3.500 | 8.4172 |
+| (0, 3) | 3.598 | 8.6537 |
+
+Each mode becomes a resonant biquad at f_0 · ratio, excited by
+`strike × w_{m,n}` instead of the current uniform 1/9. The old uniform
+`head(x)` is the degenerate center-strike case (J_m(0) = 0 for m > 0,
+J_0(0) = 1 — only m=0 "breathing" modes fire, which is correct for a
+true center strike but wrong for everything else).
+
+Pickup is modeled as a uniform average over the head. A per-mode readout
+weight ψ_{m,n}(r_mic, φ_mic) applied on the output side would make mic
+position audible in the simulation, but it's deferred until there's a
+reason to care.
+
+#### 3.4.3 What the ideal model omits
+
+The PDE above is the simplest thing that gives Bessel modes. The real
+head violates every one of its assumptions at some level:
+
+- **Air load.** A real head moves air; the air's inertia lowers every
+  mode frequency by several percent, and non-uniformly — lower modes
+  more than higher ones. This is why a real drum's overtones aren't
+  exactly at the Bessel ratios.
+- **Shell coupling.** Energy leaks through the rim into the goblet
+  body's acoustic modes and back. Q is set by this loss, not by the
+  membrane. The `qHead` slider is a single global approximation;
+  reality is per-mode.
+- **Bending stiffness.** Real skin / Mylar has non-zero flexural
+  rigidity, so it's technically a plate, not a pure membrane. Dispersion
+  pushes high-n modes sharp relative to the Bessel prediction.
+- **Tension inhomogeneity.** Tuning isn't perfectly uniform around the
+  hoop, so the m ≥ 1 cos/sin degenerate pair splits into two slightly
+  different frequencies. This split is literally what produces the
+  characteristic "beat" in a real drum and is completely absent from
+  this model.
+- **Nonlinearity at hard strikes.** Large-amplitude displacement stiffens
+  the membrane (Berger / von Kármán regime); pitch rises briefly on
+  loud hits and settles back as amplitude decays.
+- **Per-mode damping.** Each (m, n) has its own Q in reality, mostly
+  set by where that mode loses energy (rim, air, internal).
+- **Pickup location.** Current code sums modes with uniform weight on
+  output — equivalent to a pickup that weights every mode equally. A
+  real mic at (r_mic, φ_mic) would apply ψ_{m,n}(r_mic, φ_mic) a
+  second time on the readout side. **Confirmed audibly on 2026-04-19:**
+  strikes at X = +0.7 and X = −0.7 (Y = 0) sound different — +0.7 is
+  brighter — even though the two points are related by a 180° rotation
+  of the drum and should be indistinguishable on a rotationally
+  symmetric membrane. Why our model breaks symmetry here: the round-trip
+  output ∝ Σ ψ_{m,n}(strike) · ψ_{m,n}(mic) · h_{m,n}(t) picks up
+  (-1)^{2m} = +1 for every mode under rotation **only when the pickup
+  also applies a mode-shape weight**. Our uniform output factor is a
+  missing ψ_mic; odd-m modes keep a rotation-induced sign flip that
+  would be canceled by a proper readout weight, and that sign flip
+  changes the initial transient envelope, which reads as a timbre
+  change. Adding a per-mode readout weight is cheap and is now a
+  Track 0 step (§9) rather than deferred.
+
+None of these are fatal for the role the model plays in §3.4.4:
+qualitative prototyping of the DSP graph, test-vector generation, and
+coil-pattern decomposition. They become significant once we're trying
+to match a specific real head's spectrum — which is what the
+calibration step (§3.4.5) is for.
+
+#### 3.4.4 Three roles this component plays
+
+1. **Pre-hardware prototyping.** Drive the existing DSP graph from
+   modeled strikes instead of the mic array. Freq-shifted feedback
+   (§3.2 path 2), modal bank (path 3), self-osc SVFs (path 4), and
+   waveshaper (path 5) all run unchanged. Tunes the whole chain against
+   virtual strikes at canonical positions (center / halfway / edge /
+   off-axis) before the darbuka is ever instrumented.
+
+2. **Post-hardware test vectors.** With known (x, y, v) going in, the
+   model predicts which modes should ring and how loudly. Cross-check
+   against (a) what the TDOA localizer reports and (b) the measured
+   mic-array signal. Mismatches diagnose whether the fault is mic
+   placement, TDOA math, or head physics assumptions.
+
+3. **Forward/inverse pair for §6.3 coil segmentation.** The same
+   Bessel decomposition that maps (strike position) → (mode weights)
+   also maps (target mode weights) → (per-segment coil drive). An
+   azimuthally segmented coil with N wedges is a spatial Fourier basis
+   on φ; radial segmentation samples J_m at specific radii. To pump
+   mode (m, n), integrate ψ_{m,n} over each wedge/ring to get that
+   segment's relative amplitude and phase. The physical model is
+   what lets us design and debug drive patterns offline, instead of
+   discovering on the bench that our "pump m=2" pattern also pumps
+   m=0 because we got the Bessel integrals wrong.
+
+#### 3.4.5 Calibration against a real head
+
+Given the omissions in §3.4.3, real mode frequencies and Qs drift a few
+percent (or more) from theory. Calibration plan:
+
+- Mechanical striker (solenoid + arm on a stand) fixed at known (r, φ),
+  sweeping a grid of positions on the real head.
+- `measure.py` captures per-position IRs.
+- Fit per-mode f and Q to measurement; **keep the shape weights
+  w_{m,n} from theory** unless measurement shows the shape predictions
+  themselves are badly off.
+
+Frequency-only calibration probably suffices; shape-function calibration
+would require a mic-scan across the head (far more effort) and is
+deferred until there's evidence it's needed. Modeling the cos/sin
+degenerate split and per-mode Q are the most likely first extensions
+if frequency-only fitting leaves the simulation sounding clearly unlike
+the real drum.
+
+#### 3.4.6 Implementation
+
+Lives in `djembe.dsp` as a new `strikeModel(x, y, v)` component that
+replaces the uniform-weight head excitation. Bessel evaluation uses
+libm's `j0f`/`j1f`/`jnf` through FAUST `ffunction` — available on both
+the Linux development toolchain (glibc) and the Daisy target (newlib),
+no custom approximations needed. Weights are cached between strikes,
+so no audio-rate Bessel calls.
 
 ## 4. Pivot: djembe → darbuka
 
@@ -463,9 +713,10 @@ the PCB coil can safely deliver.
   of the shell by a cross-brace so it sits 2–3 mm below the head. Will
   be designed in `brackets.scad` alongside the existing parts.
 - **Amp**: **8-channel class-D** — two 4-channel TPA3116 boards, or a
-  TAS5825 eval with per-channel control. Driven from the Daisy via an
-  external multichannel I2S DAC since the Daisy's onboard codec is
-  stereo only.
+  TAS5825 eval with per-channel control. During prototyping driven
+  directly from 8 outputs of the PC audio interface (§2.1). During
+  deployment driven from Daisy via an external multichannel I2S DAC
+  since the Daisy's onboard codec is stereo only.
 
 ### 6.6 Relationship to track A
 
@@ -510,7 +761,11 @@ secondary body-resonance drivers in the stereo (or multichannel) output.
 
 ## 8. Decision log
 
-- Platform: **Daisy Seed** (over ESP32, Pi Zero, OWL). §2.
+- Compute platforms: **PC + multichannel USB audio interface for
+  prototyping, Daisy Seed for deployment** — same FAUST DSP graph
+  compiles to both. PC gets us to a playable hybrid instrument
+  without Daisy firmware in the critical path; Daisy is the last
+  step, not the first. §2.
 - Sensing: **mic array only** — no piezos, no head-mounted sensors. §3.1.
 - Control: **MIDI-USB first**, OSC deferred. §3.3.
 - Instrument: **darbuka** (over djembe). §4.
@@ -527,19 +782,57 @@ secondary body-resonance drivers in the stereo (or multichannel) output.
 
 ## 9. Next steps
 
-Run the two tracks in parallel:
+Run the tracks in parallel:
 
-**Track A (immediate)**
-1. Buy transducers + measurement mic.
-2. Print `mic_jig` and `hoop_clamp`, plus `body_magnet` for the baseline.
+**Track 0 — Simulation (pre-hardware, immediate, software only)**
+0a. Extend `djembe.dsp` with the §3.4 physical model: strike (x, y, v)
+    → per-(m, n) Bessel weights → existing 9-mode head bank. Bessel
+    evaluation via libm `j0f`/`j1f`/`jnf` through FAUST `ffunction`.
+0b. Sanity-check qualitative behavior: center strike fires only m=0
+    modes; edge strikes push energy into high radial modes; off-axis
+    strikes light up m≥1 modes with the expected cos(mφ) pattern.
+0c. Use the modeled strikes as the input for tuning freq-shift,
+    modal-bank, SVF, and waveshaper parameters (§3.2) before any
+    hardware exists. Anything that doesn't sound musical in simulation
+    is unlikely to sound musical through a real coil either.
+0d. Dual-purpose the same model as a **test-vector generator** for the
+    coil segmentation math (§6.3) and for TDOA localizer validation
+    once mics are in.
+0e. Add mic position (r_mic, φ_mic) and apply per-mode readout weights
+    ψ_{m,n}(r_mic, φ_mic) on the head output. Restores round-trip
+    rotational symmetry (strikes symmetric about the mic axis sound
+    identical, matching the real drum) and makes pickup placement
+    audible. Empirical motivation: X = ±0.7 currently sound different
+    (§3.4.3).
+
+**Track 0.5 — PC prototyping rig (bridges sim → hardware)**
+0.5a. Extend `djembe.dsp` to multichannel I/O: 4-channel mic-array
+      input (sum + per-channel access for TDOA), and 8-channel coil
+      output with per-segment routing matrix (§3.2 paths → §6.3
+      segment indices). Still runs via `faust2jack` on the PC; amp
+      outputs unused during sim.
+0.5b. Document the PC prototyping rig: audio interface + JACK / PW
+      realtime config (`chrt --fifo 80`, buffer / period settings),
+      measured round-trip latency, physical amp chain, transducer
+      cabling.
+0.5c. Validate closed-loop feedback on PC: modeled strikes → DSP → one
+      test transducer → mic input → back through DSP. Confirms the
+      interface + JACK + FAUST round-trip is stable enough for a
+      feedback loop before any custom hardware is in play.
+
+**Track A — tactile baseline (immediate, hardware)**
+1. Buy transducers + measurement mic; measure darbuka hoop dimensions
+   for `brackets.scad`.
+2. Print `mic_jig`, `hoop_clamp`, `bolt_bracket`, `body_magnet`.
 3. Run `measure.py` for each mount; save and compare.
 4. **Gate decision:** do any mounts produce usable broadband coupling? If
    yes, continue. If no, revisit mount geometry.
-5. With a working mount, wire a temporary analog Larsen loop
-   (mic → amp → transducer) and confirm acoustic feedback is achievable
-   before investing in Daisy DSP work.
+5. With a working mount, close the feedback loop by driving the Track A
+   transducer from `djembe.dsp` running on the PC (via the audio
+   interface + external TPA3116 amp). Confirm acoustic feedback is
+   achievable before any Track B work ships.
 
-**Track B (parallel, 1–2 week cadence)**
+**Track B — planar magnetic (parallel, 1–2 week cadence)**
 6. Design flex PCB coil geometry in KiCad: **2 concentric rings × 4
    azimuthal wedges = 8 coils** (§6.3.4), 4 layers, 2 oz copper,
    ~200 mm OD annular. Submit first order.
@@ -553,12 +846,23 @@ Run the two tracks in parallel:
 10. Confirm the predicted BL ≈ 2–3 N/A and per-segment power budget
     match measured reality before driving the full 8-channel array.
 
-**Joint (after either track demonstrates viable coupling)**
-11. Begin DSP graph implementation on Daisy, one path at a time,
-    starting with path (2) (freq-shifted feedback) — the load-bearing
-    innovation relative to the failed prior attempt.
-12. If Track B is primary, wire multichannel output routing so DSP can
-    address each coil segment independently (§3.2, §6.3).
+**Joint — full hybrid loop on PC (after §9 Tracks A and B demonstrate
+viable coupling)**
+11. Wire the full instrument on PC: mic array → interface in → DSP
+    graph → interface out × 8 → amps → segmented coil. This is the
+    first time the instrument exists as a playable thing.
+12. Implement MIDI-USB CC routing matrix + front-panel pots against
+    the PC target (§3.3). Build the control surface before Daisy so
+    its mapping is validated and debugged.
+
+**Deployment — Daisy (only after PC prototype validates)**
+13. Port `djembe.dsp` to Daisy via `faust2daisy`. DSP logic unchanged;
+    the change is audio I/O binding.
+14. Wire Daisy-side multichannel I/O: external TDM ADC (AK5558 /
+    PCM1865) for the mic array, 8-channel I2S DAC for coil drive.
+    Mirror the channel count validated on PC.
+15. Enclosure + UI: OLED + encoder + pots. Final instrument form
+    factor.
 
 ## 10. Open questions
 
@@ -588,3 +892,7 @@ Run the two tracks in parallel:
 - Does the §6.4 power model hold in practice? The ~2–3 N/A force factor
   and ~1–5% efficiency are estimates from planar-magnetic headphone
   precedent — real numbers need bench confirmation on the first PCB.
+- How far does the §3.4 ideal-membrane Bessel model diverge from a real
+  tensioned darbuka head? Does frequency-only calibration (fit per-mode
+  f and Q to measurement, keep theoretical shape weights) close the
+  gap, or do we need a mic-scan of the actual mode shapes?

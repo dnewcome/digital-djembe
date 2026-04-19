@@ -7,3 +7,11 @@ measurements/
 *.wav
 *.npz
 *.png
+
+# FAUST compile outputs — keep .dsp sources, drop everything else
+*.cpp
+*.o
+*-svg/
+sine
+djembe
+!*.dsp
