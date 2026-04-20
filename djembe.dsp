@@ -32,7 +32,7 @@ strikeDec  = hslider("h:djembe/v:[0]col1/h:[1]strike/[2] Strike Decay [unit:ms]"
 strikeX    = hslider("h:djembe/v:[0]col1/h:[1]strike/[3] Strike X", 0.0, -0.99, 0.99, 0.01);
 strikeY    = hslider("h:djembe/v:[0]col1/h:[1]strike/[4] Strike Y", 0.0, -0.99, 0.99, 0.01);
 
-fbGain   = hslider("h:djembe/v:[0]col1/h:[2]feedback/[0] Feedback Gain", 0, 0, 2.0, 0.001);
+fbGain   = hslider("h:djembe/v:[0]col1/h:[2]feedback/[0] Feedback Gain [scale:log]", 0.01, 0.001, 2.0, 0.001) : si.smoo;
 shiftHz  = hslider("h:djembe/v:[0]col1/h:[2]feedback/[1] Shift LFO [unit:Hz]", 6, 0.1, 30, 0.1);
 shiftMs  = hslider("h:djembe/v:[0]col1/h:[2]feedback/[2] Shift Depth [unit:ms]", 3, 0.0, 20, 0.1);
 
@@ -154,10 +154,10 @@ dspChain(x) = directMix * shift(x)
 // pick up with the mic.  Return path: dspChain * fbGain, fed back via ~.
 
 fwd(fb, s) = (s + fb) : head : mic;
-returnPath(x) = dspChain(x) * fbGain;
+returnPath(x) = ma.tanh(dspChain(x) * fbGain);
 
 system = strikeSig : fwd ~ returnPath;
 
 // ---------- Output: stereo, with a touch of decorrelation ----------
 
-process = system <: _ , (_ : de.fdelay(256, 37)) :> _ * master, _ * master;
+process = system : ma.tanh <: _ , (_ : de.fdelay(256, 37)) :> _ * master, _ * master;

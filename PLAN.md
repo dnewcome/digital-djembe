@@ -363,6 +363,84 @@ the Linux development toolchain (glibc) and the Daisy target (newlib),
 no custom approximations needed. Weights are cached between strikes,
 so no audio-rate Bessel calls.
 
+### 3.5 Augmentation model — regenerative filter bank, not whole-instrument feedback
+
+Closed-loop feedback (mic → DSP → transducer → head → mic, positive
+gain around the whole instrument) is the obvious conceptual model for
+"livening" a drum, by analogy with a guitar string that sings under
+amplifier feedback. **It probably isn't the right primitive for a
+darbuka.**
+
+**Why the analogy fails on a 2D membrane.** A guitar string is a 1D
+system with well-separated, *harmonic* modes: at any loop gain, one
+mode has highest loop gain and locks cleanly. The result is musical
+sustain. A darbuka head is a 2D system with dense, *inharmonic* modes
+(§3.4.2 — nine modes inside two octaves, no integer ratios). The loop
+doesn't have a clean winner; it locks onto whichever mode happens to
+align with loop phase at the moment, and the result is an inharmonic
+limit-cycle screech. Soft-limiting the return (as the Tanh clamp on
+`djembe.dsp`'s returnPath does) bounds amplitude but cannot fix the
+chaotic mode-locking. Frequency-agile strategies (the §3.2 path-2
+freq-shifter) disrupt the lock dynamically but don't make the
+underlying primitive fit the musical intent.
+
+**Better primitive: per-mode regenerative filters.** Instead of
+feedback around the whole instrument, build a bank of resonant filters
+each tuned to a specific head-mode frequency, and control each filter's
+resonance / Q individually. Analogous to a Moog ladder or SVF, whose
+feedback path goes around the filter section (not around the whole
+signal chain): the resonance knob is that filter's feedback amount,
+and pushing it past threshold makes the filter self-oscillate at its
+own center frequency. Mapped to this instrument:
+
+- Mic signal → bank of BPFs at head-mode frequencies.
+- Per-mode **resonance** = that mode's "how alive" knob.
+- Bank sum → transducer → head (acoustic coupling completes the loop,
+  but the loop is narrow-band per mode, not broadband).
+- Self-oscillation, when it happens, is at **mode frequencies** —
+  musical, not chaotic.
+
+**Why this fits "liven up the drum" rather than "make it scream."**
+- A finger damps a mode → that mode's energy in the mic signal drops
+  → that filter has nothing to sustain → the damped mode stays
+  damped. Player's touch directly shapes sustain.
+- A light finger tap → mic picks up the small excitation → the
+  matching mode filter amplifies it → the drum *extends* the
+  gesture without the player striking hard. This is the specific
+  intended behavior.
+- Each mode is independent. Mode-lock is structurally impossible:
+  the filter bandwidth gates which frequencies can re-circulate at
+  all, and distinct modes can't compete for the same pole.
+
+**Relationship to §3.2.** Path 3 (modal resonator bank) **is** the
+regenerative primitive. The reframing is that path 3 is the main
+augmentation mechanism, not one of many peers. The closed-loop
+container described at the top of §3.2 becomes *optional*, held in
+reserve for specific effects (controlled Larsen lock on a held note,
+chaotic drift as a standalone voice) rather than the default.
+Paths 2 (freq-shift), 4 (self-oscillating SVFs), and 5 (waveshaper)
+remain useful as standalone voice colors; path 2 becomes relevant
+again only if we do choose to close a broadband loop for a specific
+musical move.
+
+**Prototype.** `djembe_regen.dsp` is a sibling simulation that keeps
+the §3.4 physical-model head and the strike excitation, removes the
+direct / SVF / waveshaper paths from the feedback loop, and inserts
+a 9-mode regen bank tuned to the head-mode frequencies. `djembe.dsp`
+keeps the closed-loop variant for A/B comparison. Current hypothesis:
+the regen variant produces the musical "liven the head, extend
+natural touches" feel the closed-loop variant cannot. Empirical test
+is listening at matched settings (same f0, qHead, strike position)
+between the two binaries.
+
+**Implications for hardware (§6).** Segmented coil drive fits the
+regen model naturally: each mode the DSP chooses to pump maps to a
+specific (m, n) Bessel decomposition → specific per-segment drive
+pattern (§6.3). The regen bank's per-mode output is the forward map
+from "which mode" to "which drive pattern." The closed-loop model
+required no such mapping (the transducer got the whole mixed signal)
+— which is also why it had no per-mode control.
+
 ## 4. Pivot: djembe → darbuka
 
 Switched because a **darbuka has a removable metal hoop** tensioning the
@@ -771,6 +849,12 @@ secondary body-resonance drivers in the stereo (or multichannel) output.
 - Instrument: **darbuka** (over djembe). §4.
 - Feedback-coherence strategy: **freq-shift in loop + parallel DSP paths**,
   not a single gain-staged Larsen loop. §1, §3.2.
+- **Augmentation primitive: regenerative per-mode filter bank, not
+  whole-instrument closed-loop feedback.** On a 2D membrane the
+  closed-loop primitive mode-locks chaotically (empirically verified
+  with `djembe.dsp`); a Moog-SVF-style per-filter feedback structure
+  (`djembe_regen.dsp`) limits self-oscillation to musical mode
+  frequencies and makes finger-touch shaping work as intended. §3.5.
 - Transducer strategy: **dual-track** — Track A tactile (baseline /
   measurement), Track B planar magnetic flex PCB (target final
   instrument). §5, §6.
@@ -804,6 +888,12 @@ Run the tracks in parallel:
     identical, matching the real drum) and makes pickup placement
     audible. Empirical motivation: X = ±0.7 currently sound different
     (§3.4.3).
+0f. A/B the regenerative primitive (§3.5) against the closed-loop one.
+    `djembe.dsp` = whole-instrument feedback; `djembe_regen.dsp` =
+    per-mode regen bank. Listen at matched f0 / qHead / strike
+    settings. If regen produces the "liven + extend touches" feel
+    that closed-loop doesn't, promote regen as the default augmentation
+    model and relegate closed-loop to an optional secondary path.
 
 **Track 0.5 — PC prototyping rig (bridges sim → hardware)**
 0.5a. Extend `djembe.dsp` to multichannel I/O: 4-channel mic-array

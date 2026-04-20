@@ -88,8 +88,11 @@ and summed.
 # Toolchain sanity check (stereo sine)
 faust2jack sine.dsp && pw-jack ./sine
 
-# Full simulation
+# Closed-loop feedback variant
 faust2jack djembe.dsp && pw-jack ./djembe
+
+# Regenerative (per-mode filter feedback) variant
+faust2jack djembe_regen.dsp && pw-jack ./djembe_regen
 ```
 
 Try: strike with defaults (X=0, Y=0) for a centered thump, then move
@@ -102,6 +105,16 @@ so the same `.dsp` file compiles for PC (`faust2jack`) and Daisy
 for the PDE derivation, mode table, known omissions (air load,
 sin-partner pairs, per-mode Q, pickup-location readout weight), and
 calibration plan.
+
+**Two augmentation models, A/B.** `djembe.dsp` closes the feedback
+loop around the whole instrument (the obvious model, which on a 2D
+membrane tends to lock chaotically into inharmonic screech).
+`djembe_regen.dsp` uses per-mode regenerative filter feedback instead
+— Moog-SVF-style resonance around a bank of BPFs tuned to the head
+modes — so self-oscillation, when it happens, happens at musical
+mode frequencies. Crank **Regen Gain** in the second variant and
+listen to the head "liven up" rather than scream. See
+[PLAN.md §3.5](PLAN.md#35-augmentation-model--regenerative-filter-bank-not-whole-instrument-feedback).
 
 ## Two transducer tracks
 
@@ -224,7 +237,8 @@ problem from a research question into a mechanical one.
 | File | Purpose |
 |------|---------|
 | [`PLAN.md`](PLAN.md) | Living design document. Architecture, DSP graph, physical model, decision log, next steps. **Authoritative.** |
-| [`djembe.dsp`](djembe.dsp) | FAUST simulation: strike → physical model → 9-mode head bank → four parallel DSP paths → output. Runs on PC via `faust2jack`. |
+| [`djembe.dsp`](djembe.dsp) | FAUST sim, **closed-loop feedback** variant: strike → physical model → 9-mode head bank → four parallel DSP paths → whole-instrument feedback → output. |
+| [`djembe_regen.dsp`](djembe_regen.dsp) | FAUST sim, **regenerative per-mode** variant: same head model, but feedback is a narrow-band bank of BPFs tuned to the head modes (Moog-SVF-style per-filter feedback). |
 | [`sine.dsp`](sine.dsp) | Toolchain sanity check: stereo sine with frequency + gain sliders. |
 | [`measure.py`](measure.py) | Farina log sine sweep → impulse response → transfer function, for comparing transducer mounts. |
 | [`brackets.scad`](brackets.scad) | Parametric OpenSCAD: hoop clamp, bolt-capture bracket, magnetic body plate, measurement mic jig. |
