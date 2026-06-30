@@ -149,6 +149,12 @@ flowchart TD
 Chosen over piezos, optical, or head-mounted sensors because it adds **zero
 mass** to the head and provides all three jobs from the same hardware.
 
+**TODO (not yet built, 2026-06-30):** add small **electret mics underneath
+the magnet-mount plate** (inside the shell, below the head). Co-locating the
+mic array with the magnet plate gives a fixed, rigid mounting reference under
+the head and naturally feeds the §3.1 pickup / onset / TDOA jobs from inside
+the body. Revisit when the magnet plate (brackets.scad) is designed.
+
 ### 3.2 DSP graph — parallel paths, not one loop
 
 1. **Dry path.** Summed mic array → HPF → light compression → output mix.
@@ -647,7 +653,25 @@ other drum can do that.
 | Inner only | Centered / bass-weighted drive |
 | Outer only | Edge / treble-weighted drive |
 
-#### 6.3.4 First-prototype target: 2 rings × 4 wedges = 8 coils
+#### 6.3.4 First-prototype target — SUPERSEDED → single edge ring × 4 quadrants = 4 coils
+
+**Revised 2026-06-30 (user sketch + sim).** The first prototype is now a
+**single edge ring split into 4 azimuthal quadrants = 4 coils**, not 2 rings ×
+4 wedges = 8. Rationale, all validated this session:
+- **Edge placement minimizes slap risk and mass-loading together.** The rim is
+  a displacement node, so the coil annulus deflects least under a strike (gap
+  clearance) AND a coil's mass barely detunes the head there. MuJoCo A/B:
+  1.5 g at the edge detunes f0 by −0.1%, the same mass mid-head by −4.1%.
+- **Halves the amp channel count** (4 → one 4-channel class-D board).
+- Reaches the drum-interesting azimuthal modes by quadrant phasing: all-in-
+  phase = m=0 breathing, (+,+,−,−) = m=1 dipole, (+,−,+,−) = m=2 quadrupole.
+- Trade given up: radial (n) selectivity, which a single ring can't provide.
+- Fab geometry + Gerbers: `coil/coil_gen.py` → `coil/gerber_export.py`
+  (`coil/gerber/`). Modal steering demo: `make modes`.
+
+The original 8-coil scheme below is kept for reference.
+
+##### (reference) original target: 2 rings × 4 wedges = 8 coils
 
 Combines both segmentation axes on a single PCB revision:
 - 2 concentric coil rings (radial dimension): ~0.55 R inner, ~0.85 R
@@ -720,6 +744,26 @@ magnet array:
 At 5% efficiency, 5 mW mechanical requires **~100 mW electrical per
 coil** — easily within the per-trace current rating.
 
+**Simulated reality (2026-06-30, `coil/bl_sim.py`, magpylib magnetostatic
+over the real `coil/coil_gen.py` trace geometry, 14" snare).** The
+estimates above were optimistic and are superseded:
+
+- Real in-plane gap field is **B_perp ≈ 0.12 T** (N42, 2.5 mm gap), not
+  0.3–0.5 T — small bars decay fast; 0.3–0.5 T is a magnet-face number.
+- Real **BL ≈ 0.5–0.6 N/A** per 8-coil segment (4-layer series), not
+  2–3 N/A. Serpentine-vs-bar phasing checks out (coherence = 1.00).
+- **Finer bar pitch does NOT raise BL.** 6→3 mm pitch ~doubles turns but
+  the gap field collapses (0.18→0.07 T); net BL is flat-to-worse. Pitch
+  is therefore freed to optimize impedance/manufacturing, not force.
+- Force levers, in order: **(1) gap** (2 mm vs 3 mm ~halves the field —
+  the dominant lever and the #1 magnet-plate spec), **(2) magnet grade +
+  bar height** (N52 + 5 mm-tall bars ~doubles BL → ~1.1 N/A), **(3)
+  steel-shell back-iron** (~+20%, free on this drum).
+- This does not sink the concept: sustain (the intended use, §6.4.5)
+  needs only ~0.04 N → ~70 mA → ~17 mW even at BL 0.6. "Moderate liven"
+  (0.2 N) is ~0.33 A / ~0.42 W. Only "drive hard" (1 N) is thermally out
+  (~10 W). Recommended build: **N52 + 1.5–2 mm gap + steel back-iron.**
+
 #### 6.4.3 Impedance target
 
 Flex PCB coils are resistive. Rough numbers for a single-layer 1 oz
@@ -758,7 +802,11 @@ hard ceiling for short transient peaks, not a normal operating point.
 **Yes, for the intended use case:** sustaining and shaping feedback
 that the player's strike has already seeded. The required mechanical
 power (~5 mW per active mode) is ~2 orders of magnitude below what
-the PCB coil can safely deliver.
+the PCB coil can safely deliver. **Confirmed by magnetostatic
+simulation (2026-06-30, §6.4.2): the real BL is ~0.5–1.1 N/A (not the
+2–3 N/A estimated here), but sustain needs only ~0.04 N, so the verdict
+holds with ~100× power margin.** The 1 N "drive hard" case is now
+explicitly off the table thermally.
 
 **Caveats and monitoring points:**
 - Planar coils will *not* drive the drum loudly from silence — don't
@@ -775,6 +823,64 @@ the PCB coil can safely deliver.
 - If the first PCB revision falls short, the levers are (in order):
   more copper (add layers or go 2 oz → 3 oz at higher cost), stronger
   magnets (N52 vs N42), smaller gap, more turns per segment.
+
+#### 6.4.6 Single-sided physics, and the Halbach mitigation
+
+This is a **single-sided** planar driver by necessity: the playing surface is on
+top, so magnets can only sit **below** the head. Headphone planars (Audeze,
+HiFiMan, modern Fostex) *sandwich* the diaphragm with magnets on both sides
+(push-pull) for efficiency; the original **Fostex T50RP — single-sided — is the
+famous hard-to-drive example**, and that is exactly the regime we are in.
+(Sources: Fostex T50RP product pages; headphones.com / mynewmicrophone driver
+explainers; US Patent 7,142,688 single-ended planar-magnetic speaker.)
+
+**Why single-sided is weak (`coil/field_map.py`, `make field`).** The strong
+in-plane field is at the magnet faces; the coil rides on the head a gap *above*,
+in the decayed fringe field. Mapped B_perp at the coil plane (N42, 2 mm gap):
+
+| arrangement | B_perp at coil | BL |
+|---|---|---|
+| single-sided, simple alternating | 105 mT | ×1.0 |
+| single-sided **Halbach** | 149 mT | ×1.42 |
+| double-sided push-pull | 210 mT | ×2.0 (can't do — magnets on top) |
+
+The single-sided field also **decays steeply with height**, which is *why gap is
+the dominant BL lever* — a double-sided centre field is flat; this is a
+single-sided penalty.
+
+**Halbach recovers most of it, on the bottom side alone (`coil/bl_sim.py`,
+`best_halbach`).** Replacing the simple alternating bars with a Halbach array
+(bars at half pitch, magnetization rotating [+z, +nv, −z, −nv], period matched
+to the serpentine) steers flux up to the coil. Over the **real 4-quadrant edge
+coil**:
+
+| array | B_perp | coherence | BL (4-layer) | vs simple |
+|---|---|---|---|---|
+| simple | 121 mT | 1.00 | 0.54 N/A | ×1.00 |
+| simple + back-iron | 148 mT | 1.00 | 0.65 | ×1.22 |
+| **Halbach** | **234 mT** | **1.00** | **1.03 N/A** | **×1.93** |
+| Halbach + back-iron | 234 mT | 1.00 | 1.03 | ×1.93 |
+
+So a single-sided Halbach **nearly doubles BL (0.54 → ~1.0 N/A)** with force
+coherence preserved — roughly double-sided performance, playing surface kept
+clear. **Steel back-iron is redundant once Halbach is used** (Halbach already
+starves the back side; the high-µ image flips the tangential magnetization and
+cancels). Registration matters: the Halbach period must match the serpentine or
+the forces cancel (coherence < 1) — `best_halbach()` brute-forces the phase, and
+the build must hold that alignment.
+
+**Costs / caveats.**
+- ~2× the magnets (half-pitch bars), and some must be **in-plane-magnetized**
+  (harder to source / orient / assemble than simple N-up/S-up bars).
+- Single-sided force-vs-displacement is **asymmetric → more even-harmonic
+  distortion** than push-pull. A flaw for hi-fi headphones; for a drum built for
+  controllable nonlinearity it is **neutral-to-useful** — the thing headphones
+  fight, we can spend.
+
+**Implication.** Rev A can ship the **simple alternating array** (BL ~0.65 with
+back-iron) — enough for sustain. If more authority is wanted, the upgrade path is
+a **Halbach magnet plate** (BL ~1.0 N/A, "moderate liven" cheap), **not magnets
+on top**. Tooling: `make field` (field maps), `make bl` (Halbach BL numbers).
 
 ### 6.5 Fabrication path
 - **PCB**: JLCPCB or PCBWay flex PCB service. 4-layer, 2 oz outer copper,
@@ -863,6 +969,41 @@ secondary body-resonance drivers in the stereo (or multichannel) output.
   response was bad (intrinsic 3–8 kHz piezo resonance, vanishing
   displacement at bass, capacitive load mismatch). Planar magnetic
   drive replaces piezos for the direct-drive role. §5.2.
+- **First prototype platform: 14" steel-shell snare, not the darbuka.**
+  Easier interior access for the magnet plate; Mylar head fits the
+  ideal-membrane model better than skin (both darbuka and djembe heads
+  are also Mylar, so the model and coil transfer). Steel shell doubles
+  as magnetic back-iron. Coil OD scales to ~340 mm → fab as 4 separate
+  wedge boards rather than one large annular flex. §6.5, §9.
+- **Coil geometry + force are now code-generated and simulated.**
+  `coil/coil_gen.py` emits the serpentine coil (parallel-bar topology,
+  per-quadrant tangential bars) + electrical numbers; `coil/bl_sim.py`
+  computes real BL via magpylib magnetostatics over that geometry. Key
+  result (§6.4.2): real BL ~0.5–0.6 N/A (N42) up to ~1.1 (N52 + tight
+  gap + back-iron), ~4× under the original §6.4 estimate; gap is the
+  dominant force lever, finer pitch does not help. Concept still viable
+  for sustain. Order against **N52 + 1.5–2 mm gap + steel back-iron**.
+- **First prototype is 4 coils, not 8: single edge ring × 4 azimuthal
+  quadrants.** §6.3.4. Edge placement minimizes both strike-slap risk and
+  coil mass-loading (rim = displacement node; MuJoCo A/B: −0.1% f0 detune
+  at the edge vs −4.1% mid-head). 4 amp channels. Gives up radial mode
+  selectivity. Fab Gerbers: `coil/gerber_export.py` → `coil/gerber/`.
+- **Single-sided is forced; Halbach is the force-upgrade path.** Magnets can
+  only go below (playing surface on top) → this is a single-sided planar driver
+  (Fostex T50RP regime), ~half the BL of double-sided push-pull, and the reason
+  gap is the dominant lever. A single-sided **Halbach** array nearly doubles BL
+  (0.54 → ~1.0 N/A, coherence preserved; `coil/bl_sim.py best_halbach`) —
+  ~double-sided performance without magnets on top — at the cost of ~2× bars
+  (some in-plane-magnetized). Back-iron is redundant with Halbach. Rev A = simple
+  array (sustain); upgrade = Halbach. Field maps: `coil/field_map.py`. §6.4.6.
+- **MuJoCo mechanical bench** (`sim/membrane_sim.py`, `make interactive` /
+  `selftest` / `massload` / `modes`): nonlinear mass-spring membrane
+  (geometric stiffening for free), FIXED mocap magnet plate (separate from
+  the head), distributed strike, and 4 independent quadrant coil drives
+  that steer m=0/m=1/m=2. Calibrated: lattice f0 ~194 Hz vs 200 target.
+  MuJoCo is for this mechanical/contact/EM layer, NOT acoustics (that is
+  `djembe.dsp`). The gap-clearance number itself is nonlinear/contact-
+  dominated and best **measured on the real head** (240 fps), not simmed.
 
 ## 9. Next steps
 

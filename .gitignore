@@ -16,3 +16,11 @@ sine
 djembe
 djembe_regen
 !*.dsp
+
+# MuJoCo / build outputs
+build/
+*.gif
+
+# coil generated artifacts (regenerate via `make coil` / `make gerber`)
+coil/coil_preview.svg
+coil/gerber/
