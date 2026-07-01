@@ -892,10 +892,28 @@ on top**. Tooling: `make field` (field maps), `make bl` (Halbach BL numbers).
 - **Adhesion**: thin-film contact adhesive (3M 467MP) or clear urethane
   laquer. Needs an acoustic test to confirm it doesn't stiffen the head
   perceptibly — test on a spare head before committing.
-- **Magnet plate**: 3D-printed fixture holding 16+ N42 bar magnets
-  (~3×3×20 mm) in alternating polarity, suspended from the inside lip
-  of the shell by a cross-brace so it sits 2–3 mm below the head. Will
-  be designed in `brackets.scad` alongside the existing parts.
+- **Magnets — 4 localized patches, not a full ring (decided 2026-06-30).**
+  Rather than tile the whole rim (~175–350 tiny magnets), the driver is **4
+  discrete PM-driver patches** at 0/90/180/270°, each a small locally-flat
+  parallel-bar planar element (back to the clean §6.2 topology — no chording).
+  Each patch: **7× 20×5×5 mm N52 bars** (headphone-*footprint*; 60 mm bars
+  would chord the rim arc), laid flat with the **5 mm face tangential** (sets
+  the coarse 6 mm pitch that keeps the field alive at the 2–3 mm coil gap) and
+  the **Z height as tall as practical, magnetized through Z**. Taller Z is a
+  big lever (bl_sim: 20×5×**5** gives **+43% BL** vs 20×5×2), and it's *free*:
+  the magnets are on the FIXED plate, so magnet mass never damps the head —
+  only *coil* mass does. Edge-standing to gain height is a trap (it forces a
+  fine pitch that loses more than the height gains). Alternating N/S, long axis
+  radial. ~28 magnets total (56 for a Halbach variant, narrower bars at half
+  pitch). The 4 patches
+  still steer m=0/1/2 by phasing. Placement: outer ~20 mm rim band, which
+  minimizes both mass-loading and strike-slap (rim = displacement node) at the
+  cost of ~½ the BL — recovered by Halbach (§6.4.6).
+- **Magnet holder**: `cad/magnet_holder.py` (build123d, `make holder`) — a flat
+  printed plate with keyed pockets the bars glue into (the head is flat, so the
+  holder is flat → constant gap), 2× M3 mounting ears, a polarity-key notch for
+  consistent phase across the 4 patches. Printed ×4. Mounting brace to the
+  shell (holding the 4 at the gap) is the next mechanical part.
 - **Amp**: **8-channel class-D** — two 4-channel TPA3116 boards, or a
   TAS5825 eval with per-channel control. During prototyping driven
   directly from 8 outputs of the PC audio interface (§2.1). During

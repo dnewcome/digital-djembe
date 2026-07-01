@@ -14,7 +14,7 @@
 PY  := python3
 SIM := sim/membrane_sim.py
 
-.PHONY: interactive selftest massload render modes coil preview bl gerber verify gap gap-lin deps clean
+.PHONY: interactive selftest massload render modes coil preview bl gerber verify field holder gap gap-lin deps clean
 
 interactive:
 	MUJOCO_GL=glfw $(PY) $(SIM) --interactive
@@ -48,6 +48,9 @@ verify:
 
 field:
 	$(PY) coil/field_map.py
+
+holder:
+	$(PY) cad/magnet_holder.py
 
 gap:
 	$(PY) coil/gap_fdtd.py

@@ -32,7 +32,7 @@ T_1OZ = 35e-6           # m, 1 oz copper finished thickness
 class Params:
     name: str = "14in-snare"
     head_d: float = 356.0           # 14" head OD, mm (R = 178)
-    rings: tuple = ((0.84, 0.10),)  # single EDGE ring (center_frac, halfwidth_frac of R)
+    rings: tuple = ((0.92, 0.055),)  # outer ~20 mm rim band (center_frac, halfwidth_frac of R)
     n_wedges: int = 4               # 4 azimuthal QUADRANTS -> 4 coils
     gutter_deg: float = 6.0         # dead angular gap between quadrants
     bar_pitch: float = 6.0          # mm, bar + gap (sets serpentine pitch)
